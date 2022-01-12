@@ -1,48 +1,22 @@
 """
     Algorithm : Constructing a Minimum Spanning Tree
 """
+import pickle
 import os
 import socket
+import sys
 import threading
 import yaml
 from typing import List
+from enum import Enum
+
+from items import Node, Edge, EdgeState, NodeState, Message, MessageType
+from utils import read_files
 
 nodes = []  # Contains all nodes
 
+
 # This class represent a node
-class Node:
-    id: int  # Use only to print logs - No use in the algorithm
-    parent: 'Node' = None  # Parent
-    f: List['Edge'] = []  # Set of children
-    nf: List['Node'] = []  # Set of non-children
-    v: List['Node']  # Set of neighbours
-    ne: List['Node']  # Set of neighbours not yet explored
-    terminated: bool = False  # Use to stop the algorithm
-    address: str  # Address of this node
-
-    def __init__(self, id, address):
-        # Add id and address to all nodes
-        self.id = id
-        self.address = address
-
-    def add_neighbours(self, neighbours):
-        # Non-explored neighbours are equals to neighbours at initialization
-        self.v = neighbours
-        self.ne = neighbours
-
-# This class represent a edge
-class Edge:
-    source: Node
-    destination: Node
-    weight: int
-    status: str
-
-def create_nodes(data):
-    # Create all nodes, without neighbours. Return all nodes
-    nodes = []
-    for n in data:
-        nodes.append(Node(n['id'], n['address']))
-    return nodes
 
 
 def get_node_from_ip(ip):
@@ -68,27 +42,13 @@ def receive(node):
     node_src = get_node_from_ip(address[0])
 
     # Get message
-    message = clientsocket.recv(2000).decode()
+    message = pickle.loads(clientsocket.recv(2000))
 
     return node_src, message
 
 
-def read_files(all_files_path):
-    # Read content of all files and return data contained inside each file
-    data = []
-    for f in all_files_path:
-        try:
-            # Open and read file
-            with open(f) as file:
-                yaml_node = yaml.load(file, Loader=yaml.FullLoader)
-                data.append(yaml_node)
-
-            # Close file
-            file.close()
-        except Exception as e:
-            print(e)
-            exit()
-    return data
+def find_least_weighted_edge(edges):
+    return min(edges, key=lambda x: x.weight)
 
 
 def root_function(node):
@@ -96,17 +56,19 @@ def root_function(node):
 
     # Set parent, get a neighbour
     node.parent = node
-    nk = node.ne.pop(0)
+    node.state = NodeState.FIND
 
     # Create and send first socket
-    message = "M"
-    send(message, node, nk)
+    node.state = NodeState.FOUND
+    edge = find_least_weighted_edge(node.edges)
+    edge.state = EdgeState.BRANCH
+    send(Message(MessageType.CONNECT, [0], edge), node_src=node, node_dst=edge.dest)
 
     # Connect to server
     server(node)
 
 
-def send(message, node_src, node_dst):
+def send(message: Message, node_src: Node, node_dst: Node):
     # Send a packet to another node
 
     # Create socket, bind and connect
@@ -118,58 +80,136 @@ def send(message, node_src, node_dst):
     # Send
     print("Node {} ({}) send <{}> to node {} ({})".format(node_src.id, node_src.address, message, node_dst.id,
                                                           node_dst.address))
-    s.send(message.encode())
+    s.send(pickle.dumps(message))
 
     # Close socket
     s.close()
+
+
+def find_edge_of_node(edges, node):
+    for e in edges:
+        if e.dest == node:
+            return e
+
+    raise Exception
+
+
+def report(node):
+    qs = 0
+    for e in node.edges:
+        if e.state == EdgeState.BRANCH and e != node.parent:
+            qs += 1
+
+    if node.rec == qs and node.test_edge is None:
+        node.state = NodeState.FOUND
+        send(Message(MessageType.REPORT, [node.best_wt], find_edge_of_node(node.edges, node.parent)), node, node.parent)
+
+
+def find_min(edge, node, node_from):
+    if edge in node.edges and edge.state == EdgeState.BASIC:
+        node.test_edge = edge
+        send(Message(MessageType.TEST, [node.level, node.name], edge), node, node_from)
+    else:
+        report(node)
+
+
+def change_root(node):
+    if node.best_edge == EdgeState.BRANCH:
+        send(Message(MessageType.CHANGEROOT, [], node.best_edge), node, node.best_edge.dest)
+    else:
+        node.best_edge.state = EdgeState.BRANCH
+        send(Message(MessageType.CONNECT, node.level, node.best_edge), node, node.best_edge.dest)
 
 
 def server(node):
     # Run until the node has terminated
     while not node.terminated:
         # Waiting for a message
-        node_src, message = receive(node)
+        (node_from, message) = receive(node)
+        edge = message.edge
 
-        match message:
-            case "M":
-                # M = Adoption request
-                if node.parent is None:
-                    # No parent = First adoption request received
-                    node.parent = node_src
-                    node.ne.remove(node_src)
-                    if node.ne:
-                        # Still non-explored neighbours  --> Ask to be the parent
-                        node_dst = node.ne.pop()
-                        send('M', node, node_dst)
+        match message.message_type:
+            case MessageType.CONNECT:
+                level = message.param[0]
+                if level < node.level:
+                    edge.state = EdgeState.BRANCH
+                    send(Message(MessageType.INITIATE, [node.level, node.name, node.state], edge), node, node_from)
+                elif edge.state == EdgeState.BASIC:
+                    break
+                else:
+                    send(Message(MessageType.INITIATE, [message.param[0] + 1, node.name, NodeState.FIND], edge), node,
+                         node_from)
+
+            case MessageType.INITIATE:
+                level, name, state = message.param
+                node.level = level
+                node.name = name
+                node.state = state
+                node.parent = node_from
+
+                # bestNode ← φ
+                # bestWt ← ∞
+                # testNode ← none
+
+                for r in node.edges:
+                    if r.state == EdgeState.BRANCH and r != edge:
+                        send(Message(MessageType.INITIATE, [level, name, state], r), node, r.dest)
+
+                if node.state == NodeState.FIND:
+                    find_min(edge, node, node_from)
+
+            case MessageType.TEST:
+                level, name = message
+                if level > node.level:
+                    # wait
+                    break
+                elif name == node.name:
+                    if edge.state == EdgeState.BASIC:
+                        edge.state = EdgeState.REJECT
+
+                    if edge != node.best_edge:
+                        send(Message(MessageType.REJECT, [], edge), node, node_from)
                     else:
-                        # No non-explored neighbours left --> Return to parent
-                        send('P', node, node.parent)
+                        find_min(edge, node, node_from)
+
+                else:
+                    send(Message(MessageType.ACCEPT, [], edge), node, node_from)
+
+            case MessageType.ACCEPT:
+                node.best_edge = None
+                lwe = find_least_weighted_edge(node.edges)
+                if lwe.weight < node.best_wt:
+                    node.best_wt = lwe
+                    node.best_edge = edge
+
+                report(node)
+
+            case MessageType.REJECT:
+                if edge.state == EdgeState.BASIC:
+                    edge.state = EdgeState.REJECT
+
+                find_min(edge, node, node_from)
+
+            case MessageType.REPORT:
+                omega = message.param[0]
+                if node_from != node.parent:
+                    if omega < node.best_wt:
+                        node.best_wt = omega
+                        node.best_edge = edge
+                    node.rec = node.rec + 1
+                    report(node)
+                else:
+                    if node.state == NodeState.FIND:
+                        # wait
+                        break
+                    elif omega > node.best_wt:
+                        change_root(node)
+                        pass
+                    elif omega == sys.maxsize == node.best_wt:
                         node.terminated = True
-                        print("Node {} has just finished.".format(node.id))
-                else:
-                    # Already a parent, or it's the root
-                    node.ne.remove(node_src)
-                    send('R', node, node_src)
-                    node.nf.append(node_src)
-            case ("R" | "P"):
-                match message:
-                    case "R":
-                        # R = Adoption request rejected
-                        node.nf.append(node_src)
-                    case "P":
-                        # P = Adoption request accepted
-                        node.f.append(node_src)
-                if node.ne:
-                    # Still non-explored neighbours --> Ask to be the parent
-                    node_dst = node.ne.pop()
-                    send('M', node, node_dst)
-                else:
-                    # No non-explored neighbours left --> Return to parent
-                    if not node.parent == node:
-                        # It's not the root -> Send to parent
-                        send('P', node, node.parent)
-                    node.terminated = True
-                    print("Node {} has just finished.".format(node.id))
+
+            case MessageType.CHANGEROOT:
+                change_root(node)
 
 
 if __name__ == "__main__":
@@ -185,20 +225,8 @@ if __name__ == "__main__":
         os.path.join("Neighbours", "node-8.yaml"),
     ]
     # Read data from files
-    data = read_files(all_files_path)
-
-    # Create nodes
-    nodes = create_nodes(data)
+    nodes = read_files(all_files_path)
     nb_nodes = len(nodes)
-
-    # Add all neighbours
-    for i in range(nb_nodes):
-        neighbours = data[i]['neighbours']
-        nodes_neighbours = []
-        for neighbour in neighbours:
-            # Id is 1->n and list is 0->n-1
-            nodes_neighbours.append(nodes[neighbour['id'] - 1])
-        nodes[i].add_neighbours(nodes_neighbours)
 
     # Start each node in a thread, except root node
     for n in nodes[:-1]:
