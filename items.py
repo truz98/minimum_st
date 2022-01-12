@@ -50,9 +50,9 @@ class Node:
     address: str  # Address of this node
 
     best_wt: int = sys.maxsize
-    best_edge: "Edge" = None
+    best_node: "Edge" = None
     rec: int = 0
-    test_edge: "Edge" = None
+    test_node: "Edge" = None
 
     def __init__(self, id, address, state):
         # Add id and address to all nodes

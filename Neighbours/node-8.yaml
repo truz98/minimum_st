@@ -1,14 +1,14 @@
-id: 8
+id: 7
 address: "127.0.1.8"
 neighbours:
-  - id: 5
+  - id: 4
     address: "127.0.1.5"
-    edge_weight: 0
+    edge_weight: 4
+  
+  - id: 5
+    address: "127.0.1.6"
+    edge_weight: 3
   
   - id: 6
-    address: "127.0.1.6"
-    edge_weight: 0
-  
-  - id: 7
     address: "127.0.1.7"
-    edge_weight: 0
+    edge_weight: 3
