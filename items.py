@@ -26,15 +26,12 @@ class Message:
 
 
 class MessageType(Enum):
-    NEW_FRAG = 0
     CONNECT = 1
-    MERGE = 2
     TEST = 3
     ACCEPT = 4
     REJECT = 5
     REPORT = 6
     CHANGEROOT = 7
-    AWAKE = 8
     INITIATE = 9
 
 

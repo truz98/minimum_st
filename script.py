@@ -102,12 +102,27 @@ def report(node):
 
 
 def find_min(edge, node, node_from):
-    if edge in node.edges and edge.state == EdgeState.BASIC:
+    min_edge = None
+
+    for e in node.edges:
+        if edge.state != EdgeState.BASIC:
+            continue
+        if not min_edge or min_edge.weight > edge.weight:
+            min_edge = e
+
+    if not min_edge:
         node.test_node = node_from
         send(Message(MessageType.TEST, [node.level, node.name], edge), node, node_from)
     else:
         node.test_node = None
         report(node)
+
+    # if edge in node.edges and edge.state == EdgeState.BASIC:
+    #     node.test_node = node_from
+    #     send(Message(MessageType.TEST, [node.level, node.name], edge), node, node_from)
+    # else:
+    #     node.test_node = None
+    #     report(node)
 
 
 def change_root(node):
