@@ -11,12 +11,9 @@ from typing import List
 from enum import Enum
 
 from items import Node, Edge, EdgeState, NodeState, Message, MessageType
-from utils import read_files
+from utils import read_files, find_least_weighted_edge, find_edge_of_node
 
 nodes = []  # Contains all nodes
-
-
-# This class represent a node
 
 
 def get_node_from_ip(ip):
@@ -47,23 +44,6 @@ def receive(node):
     return node_src, message
 
 
-def find_least_weighted_edge(edges):
-    return min(edges, key=lambda x: x.weight)
-
-
-def root_function(node):
-    # Priming method of the root node
-
-    # Create and send first socket
-    node.state = NodeState.FOUND
-    edge = find_least_weighted_edge(node.edges)
-    edge.state = EdgeState.BRANCH
-    send(Message(MessageType.CONNECT, [0], edge), node_src=node, node_dst=edge.dest)
-
-    # Connect to server
-    server(node)
-
-
 def send(message: Message, node_src: Node, node_dst: Node):
     # Send a packet to another node
 
@@ -80,14 +60,6 @@ def send(message: Message, node_src: Node, node_dst: Node):
 
     # Close socket
     s.close()
-
-
-def find_edge_of_node(edges, node):
-    for e in edges:
-        if e.dest == node:
-            return e
-
-    raise Exception
 
 
 def report(node):
@@ -223,6 +195,19 @@ def server(node):
 
             case MessageType.CHANGEROOT:
                 change_root(node)
+
+
+def root_function(node):
+    # Priming method of the root node
+
+    # Create and send first socket
+    node.state = NodeState.FOUND
+    edge = find_least_weighted_edge(node.edges)
+    edge.state = EdgeState.BRANCH
+    send(Message(MessageType.CONNECT, [0], edge), node_src=node, node_dst=edge.dest)
+
+    # Connect to server
+    server(node)
 
 
 if __name__ == "__main__":

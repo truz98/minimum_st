@@ -39,3 +39,15 @@ def read_files(all_files_path):
         n.edges = edges
 
     return nodes
+
+
+def find_least_weighted_edge(edges):
+    return min(edges, key=lambda x: x.weight)
+
+
+def find_edge_of_node(edges, node):
+    for e in edges:
+        if e.dest == node:
+            return e
+
+    raise Exception
