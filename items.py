@@ -65,12 +65,10 @@ class Node:
 
 # This class represent a edge
 class Edge:
-    def __init__(self, dest, weight, state):
-        self.dest = dest
+    def __init__(self, weight, state):
         self.weight = weight
         self.state = state
 
-    dest: Node
     weight: int
     state: EdgeState
 

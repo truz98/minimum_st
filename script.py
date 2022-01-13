@@ -71,11 +71,11 @@ def initialize(node):
     if node.state == NodeState.SLEEP:
         min_weighted_edge = find_least_weighted_edge(node.edges)
 
+        min_weighted_edge[0].state = EdgeState.BRANCH
+
         node.state = NodeState.FOUND
 
-        min_weighted_edge.state = EdgeState.BRANCH
-
-        send(Message(MessageType.CONNECT, [0], min_weighted_edge), node_src=node, node_dst=min_weighted_edge.dest)
+        send(Message(MessageType.CONNECT, [0], min_weighted_edge[0]), node_src=node, node_dst=min_weighted_edge[1])
 
 
 def report(node):
@@ -122,19 +122,12 @@ def change_root(node):
         send(Message(MessageType.CONNECT, node.level, best_edge), node, node.best_node)
 
 
-def get_edge(node, node_from):
-    for e in node.edges:
-        if e.dest == node_from:
-            return e
-
-
 def process(node):
     # Run until the node has terminated
     while not node.terminated:
         # Waiting for a message
         (node_from, message) = receive(node)
         edge = message.edge
-        #edge = get_edge(node, node_from)
 
         match message.message_type:
             case MessageType.CONNECT:
@@ -147,28 +140,25 @@ def process(node):
                     send(Message(MessageType.INITIATE, [node.level, node.name, node.state], edge), node, node_from)
                 elif edge.state == EdgeState.BASIC:
                     ### Wait
-                    send(Message(MessageType.CONNECT, [level], edge), node, node)
+                    pass
                 else:
                     send(Message(MessageType.INITIATE, [node.level + 1, edge.weight, NodeState.FIND], edge), node,
                          node_from)
 
             case MessageType.INITIATE:
-                if node.state == NodeState.SLEEP:
-                    initialize(node)
-
                 level, name, state = message.param
                 node.level = level
                 node.name = name
                 node.state = state
-
                 node.parent = node_from
+
                 node.best_node = None
                 node.best_wt = sys.maxsize
                 node.test_node = None
 
                 for r in node.edges:
-                    if r.state == EdgeState.BRANCH and r.dest != node_from:
-                        send(Message(MessageType.INITIATE, [level, name, state], r), node, r.dest)
+                    if r[0].state == EdgeState.BRANCH and r[1] != node.parent:
+                        send(Message(MessageType.INITIATE, [level, name, state], r), node, r[1])
 
                 if node.state == NodeState.FIND:
                     node.rec = 0
@@ -278,8 +268,6 @@ if __name__ == "__main__":
         x = threading.Thread(target=process, args=(n,))
         x.start()
         print("Node {} has started with ip {}.".format(n.id, n.address))
-
-    # wake up
 
     x = threading.Thread(target=root, args=(nodes[0],))
     x.start()

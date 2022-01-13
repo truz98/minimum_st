@@ -28,13 +28,18 @@ def read_files(all_files_path):
         nodes.append(Node(n['id'], n['address'], NodeState.SLEEP))
 
     # Add all neighbours
+    all_edge = {}
     for n in nodes:
         yaml_node = next(filter(lambda x: x["id"] == n.id, data))
         edges = []
         for neighbour in yaml_node["neighbours"]:
             # Id is 1->n and list is 0->n-1
-            edges.append(Edge(dest=next(filter(lambda x: x.id == neighbour["id"], nodes)),
-                              weight=neighbour["edge_weight"], state=EdgeState.BASIC))
+            key = (min([n.id, neighbour["id"]]), max([n.id, neighbour["id"]]))
+            if key not in all_edge:
+                e = Edge(weight=neighbour["edge_weight"], state=EdgeState.BASIC)
+                all_edge[key] = e
+
+            edges.append((all_edge[key], next(filter(lambda x: x.id == neighbour["id"], nodes))))
 
         n.edges = edges
 
@@ -42,12 +47,12 @@ def read_files(all_files_path):
 
 
 def find_least_weighted_edge(edges):
-    return min(edges, key=lambda x: x.weight)
+    return min(edges, key=lambda x: x[0].weight)
 
 
 def find_edge_of_node(edges, node):
     for e in edges:
-        if e.dest == node:
-            return e
+        if e[1] == node:
+            return e[0]
 
     raise Exception
