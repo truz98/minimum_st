@@ -70,8 +70,11 @@ def send(message: Message, node_src: Node, node_dst: Node):
 def initialize(node):
     if node.state == NodeState.SLEEP:
         min_weighted_edge = find_least_weighted_edge(node.edges)
+
         node.state = NodeState.FOUND
+
         min_weighted_edge.state = EdgeState.BRANCH
+
         send(Message(MessageType.CONNECT, [0], min_weighted_edge), node_src=node, node_dst=min_weighted_edge.dest)
 
 
@@ -86,7 +89,7 @@ def report(node):
         send(Message(MessageType.REPORT, [node.best_wt], find_edge_of_node(node.edges, node.parent)), node, node.parent)
 
 
-def find_min(edge, node, node_from):
+def find_min(edge, node):
     min_edge = None
 
     for e in node.edges:
@@ -119,13 +122,19 @@ def change_root(node):
         send(Message(MessageType.CONNECT, node.level, best_edge), node, node.best_node)
 
 
-def server(node):
-    # initialize(node)
+def get_edge(node, node_from):
+    for e in node.edges:
+        if e.dest == node_from:
+            return e
+
+
+def process(node):
     # Run until the node has terminated
     while not node.terminated:
         # Waiting for a message
         (node_from, message) = receive(node)
         edge = message.edge
+        #edge = get_edge(node, node_from)
 
         match message.message_type:
             case MessageType.CONNECT:
@@ -163,7 +172,7 @@ def server(node):
 
                 if node.state == NodeState.FIND:
                     node.rec = 0
-                    find_min(edge, node, node_from)
+                    find_min(edge, node)
 
             case MessageType.TEST:
                 if node.state == NodeState.SLEEP:
@@ -180,7 +189,7 @@ def server(node):
                     if node_from != node.test_node:
                         send(Message(MessageType.REJECT, [], edge), node, node_from)
                     else:
-                        find_min(edge, node, node_from)
+                        find_min(edge, node)
 
                 else:
                     send(Message(MessageType.ACCEPT, [], edge), node, node_from)
@@ -208,7 +217,7 @@ def server(node):
                 if edge.state == EdgeState.BASIC:
                     edge.state = EdgeState.REJECT
 
-                find_min(edge, node, node_from)
+                find_min(edge, node)
 
             case MessageType.REPORT:
                 if node.state == NodeState.SLEEP:
@@ -245,7 +254,7 @@ def server(node):
 
 def root(node):
     initialize(node)
-    server(node)
+    process(node)
 
 
 if __name__ == "__main__":
@@ -266,7 +275,7 @@ if __name__ == "__main__":
 
     # Start each node in a thread, except root node
     for n in nodes[1:]:
-        x = threading.Thread(target=server, args=(n,))
+        x = threading.Thread(target=process, args=(n,))
         x.start()
         print("Node {} has started with ip {}.".format(n.id, n.address))
 
