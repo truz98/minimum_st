@@ -6,6 +6,8 @@ import os
 import socket
 import sys
 import threading
+from time import sleep
+
 import yaml
 from typing import List
 from enum import Enum
@@ -51,7 +53,10 @@ def send(message: Message, node_src: Node, node_dst: Node):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((node_src.address, 8000))
-    s.connect((node_dst.address, 8000))
+    try:
+        s.connect((node_dst.address, 8000))
+    except ConnectionRefusedError as e:
+        print(e.strerror, node_src.id, "-", node_dst.id)
 
     # Send
     print("Node {} ({}) send <{}> to node {} ({})".format(node_src.id, node_src.address, message, node_dst.id,
@@ -60,6 +65,14 @@ def send(message: Message, node_src: Node, node_dst: Node):
 
     # Close socket
     s.close()
+
+
+def initialize(node):
+    if node.state == NodeState.SLEEP:
+        min_weighted_edge = find_least_weighted_edge(node.edges)
+        node.state = NodeState.FOUND
+        min_weighted_edge.state = EdgeState.BRANCH
+        send(Message(MessageType.CONNECT, [0], min_weighted_edge), node_src=node, node_dst=min_weighted_edge.dest)
 
 
 def report(node):
@@ -83,8 +96,8 @@ def find_min(edge, node, node_from):
             min_edge = e
 
     if not min_edge:
-        node.test_node = node_from
-        send(Message(MessageType.TEST, [node.level, node.name], edge), node, node_from)
+        node.test_node = min_edge.dest
+        send(Message(MessageType.TEST, [node.level, node.name], edge), node, min_edge.dest)
     else:
         node.test_node = None
         report(node)
@@ -107,6 +120,7 @@ def change_root(node):
 
 
 def server(node):
+    # initialize(node)
     # Run until the node has terminated
     while not node.terminated:
         # Waiting for a message
@@ -115,22 +129,30 @@ def server(node):
 
         match message.message_type:
             case MessageType.CONNECT:
+                if node.state == NodeState.SLEEP:
+                    initialize(node)
+
                 level = message.param[0]
                 if level < node.level:
                     edge.state = EdgeState.BRANCH
                     send(Message(MessageType.INITIATE, [node.level, node.name, node.state], edge), node, node_from)
                 elif edge.state == EdgeState.BASIC:
-                    break
+                    ### Wait
+                    send(Message(MessageType.CONNECT, [level], edge), node, node)
                 else:
-                    send(Message(MessageType.INITIATE, [level + 1, node.name, NodeState.FIND], edge), node, node_from)
+                    send(Message(MessageType.INITIATE, [node.level + 1, edge.weight, NodeState.FIND], edge), node,
+                         node_from)
 
             case MessageType.INITIATE:
+                if node.state == NodeState.SLEEP:
+                    initialize(node)
+
                 level, name, state = message.param
                 node.level = level
                 node.name = name
                 node.state = state
-                node.parent = node_from
 
+                node.parent = node_from
                 node.best_node = None
                 node.best_wt = sys.maxsize
                 node.test_node = None
@@ -144,10 +166,13 @@ def server(node):
                     find_min(edge, node, node_from)
 
             case MessageType.TEST:
+                if node.state == NodeState.SLEEP:
+                    initialize(node)
+
                 level, name = message.param
                 if level > node.level:
-                    # wait
-                    break
+                    ## wait
+                    send(Message(MessageType.TEST, [level, name], edge), node, node)
                 elif name == node.name:
                     if edge.state == EdgeState.BASIC:
                         edge.state = EdgeState.REJECT
@@ -161,32 +186,46 @@ def server(node):
                     send(Message(MessageType.ACCEPT, [], edge), node, node_from)
 
             case MessageType.ACCEPT:
+                if node.state == NodeState.SLEEP:
+                    initialize(node)
+
                 node.test_node = None
-                lwe = find_least_weighted_edge(node.edges)
-                if lwe.weight < node.best_wt:
-                    node.best_wt = lwe.weight
+                # lwe = find_least_weighted_edge(node.edges)
+                # if lwe.weight < node.best_wt:
+                #     node.best_wt = lwe.weight
+                #     node.best_node = node_from
+
+                if edge.weight < node.best_wt:
+                    node.best_wt = edge.weight
                     node.best_node = node_from
 
                 report(node)
 
             case MessageType.REJECT:
+                if node.state == NodeState.SLEEP:
+                    initialize(node)
+
                 if edge.state == EdgeState.BASIC:
                     edge.state = EdgeState.REJECT
 
                 find_min(edge, node, node_from)
 
             case MessageType.REPORT:
+                if node.state == NodeState.SLEEP:
+                    initialize(node)
+
                 omega = message.param[0]
                 if node_from != node.parent:
                     if omega < node.best_wt:
                         node.best_wt = omega
                         node.best_node = node_from
+
                     node.rec = node.rec + 1
                     report(node)
                 else:
                     if node.state == NodeState.FIND:
-                        # wait
-                        break
+                        ## wait
+                        send(Message(MessageType.REPORT, [omega], edge), node, node)
                     elif omega > node.best_wt:
                         change_root(node)
                         pass
@@ -194,19 +233,18 @@ def server(node):
                         node.terminated = True
 
             case MessageType.CHANGEROOT:
+                if node.state == NodeState.SLEEP:
+                    initialize(node)
                 change_root(node)
 
 
-def root_function(node):
-    # Priming method of the root node
+# def root_function(node):
+#     initialize(node)
+#     # Connect to server
+#     server(node)
 
-    # Create and send first socket
-    node.state = NodeState.FOUND
-    edge = find_least_weighted_edge(node.edges)
-    edge.state = EdgeState.BRANCH
-    send(Message(MessageType.CONNECT, [0], edge), node_src=node, node_dst=edge.dest)
-
-    # Connect to server
+def root(node):
+    initialize(node)
     server(node)
 
 
@@ -232,8 +270,20 @@ if __name__ == "__main__":
         x.start()
         print("Node {} has started with ip {}.".format(n.id, n.address))
 
-    # Start root node in another function
-    x = threading.Thread(target=root_function, args=(nodes[0],))
+    # wake up
+
+    x = threading.Thread(target=root, args=(nodes[0],))
     x.start()
-    print("Node {} has started with ip {}. This is the root node.".format(nodes[nb_nodes - 1].id,
-                                                                          nodes[nb_nodes - 1].address))
+
+    # # Start each node in a thread, except root node
+    # for n in nodes[1:]:    for n in nodes_to_manage:
+
+    #     x = threading.Thread(target=server, args=(n,))
+    #     x.start()
+    #     print("Node {} has started with ip {}.".format(n.id, n.address))
+    #
+    # # Start root node in another function
+    # x = threading.Thread(target=root_function, args=(nodes[0],))
+    # x.start()
+    # print("Node {} has started with ip {}. This is the root node.".format(nodes[nb_nodes - 1].id,
+    #                                                                       nodes[nb_nodes - 1].address))

@@ -27,6 +27,7 @@ class Message:
 
 class MessageType(Enum):
     CONNECT = 1
+    WAKEUP = 2
     TEST = 3
     ACCEPT = 4
     REJECT = 5
