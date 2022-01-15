@@ -1,6 +1,10 @@
+import pickle
 import sys
 from enum import Enum
 from typing import List
+import socket
+
+PORT = 12345
 
 
 class NodeState(Enum):
@@ -64,6 +68,36 @@ class Node:
 
     def __str__(self):
         return str(self.__dict__)
+
+    def send(self, message: Message, node_dst: "Node"):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((self.address, PORT))
+
+        s.connect((node_dst.address, PORT))
+        s.send(pickle.dumps(message))
+        s.close()
+        print("Node {} ({}) send <{}> to node {} ({})".format(self.id, self.address, message, node_dst.id,
+                                                              node_dst.address))
+
+    def receive(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((self.address, PORT))
+
+        s.listen()
+
+        # Receive data
+        clientsocket, address = s.accept()
+        # Retrieve node source from ip
+        node_address = address[0]
+
+        # Get message
+        message = pickle.loads(clientsocket.recv(4096))
+
+        s.close()
+
+        return node_address, message
 
 
 class Neighbour:

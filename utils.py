@@ -1,6 +1,16 @@
 import yaml
 
-from items import Edge, Node, NodeState, EdgeState, Neighbour
+from items import Edge, Node, Neighbour
+import threading  # :(
+from threading import Lock
+
+s_print_lock = Lock()
+
+
+def s_print(*a, **b):
+    """Thread safe print function"""
+    with s_print_lock:
+        print(*a, **b)
 
 
 # visualgo.net
@@ -57,9 +67,6 @@ def find_edge_of_node(edges, node):
             return e[0]
 
     raise Exception
-
-
-import threading  # :(
 
 
 class WaitGroup(object):
