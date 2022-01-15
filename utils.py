@@ -1,6 +1,6 @@
 import yaml
 
-from items import Edge, Node, NodeState, EdgeState
+from items import Edge, Node, NodeState, EdgeState, Neighbour
 
 
 # visualgo.net
@@ -25,7 +25,7 @@ def read_files(all_files_path):
     # Create all nodes, without neighbours. Return all nodes
     nodes = []
     for n in data:
-        nodes.append(Node(n['id'], n['address'], NodeState.SLEEP))
+        nodes.append(Node(n['id'], n['address']))
 
     # Add all neighbours
     all_edge = {}
@@ -33,15 +33,16 @@ def read_files(all_files_path):
         yaml_node = next(filter(lambda x: x["id"] == n.id, data))
         edges = []
         for neighbour in yaml_node["neighbours"]:
-            # Id is 1->n and list is 0->n-1
             key = (min([n.id, neighbour["id"]]), max([n.id, neighbour["id"]]))
+
             if key not in all_edge:
-                e = Edge(weight=neighbour["edge_weight"], state=EdgeState.BASIC)
+                e = Edge(weight=neighbour["edge_weight"])
                 all_edge[key] = e
 
-            edges.append((all_edge[key], next(filter(lambda x: x.id == neighbour["id"], nodes))))
+            edges.append(Neighbour(edge=all_edge[key], node=next(filter(lambda x: x.id == neighbour["id"], nodes))))
 
-        n.edges = edges
+        n.neighbours = edges
+        n.to_mwoe = n
 
     return nodes
 
@@ -56,3 +57,30 @@ def find_edge_of_node(edges, node):
             return e[0]
 
     raise Exception
+
+
+import threading  # :(
+
+
+class WaitGroup(object):
+    def __init__(self):
+        self.count = 0
+        self.cv = threading.Condition()
+
+    def add(self, n):
+        self.cv.acquire()
+        self.count += n
+        self.cv.release()
+
+    def done(self):
+        self.cv.acquire()
+        self.count -= 1
+        if self.count == 0:
+            self.cv.notify_all()
+        self.cv.release()
+
+    def wait(self):
+        self.cv.acquire()
+        while self.count > 0:
+            self.cv.wait()
+        self.cv.release()
