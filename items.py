@@ -1,10 +1,15 @@
 import pickle
+import queue
 import sys
+import time
 from enum import Enum
 from typing import List
 import socket
 
-PORT = 12345
+from print_ts import s_print
+
+PORT_IN = 12345
+PORT_OUT = 54321
 
 
 class NodeState(Enum):
@@ -59,6 +64,9 @@ class Node:
     min_weight: int = sys.maxsize
     ack: int = 0
     barrier: int = 0
+    count: int = 0
+    to_send = queue.Queue()
+    s: socket
 
     def __init__(self, id, address):
         # Add id and address to all nodes
@@ -66,36 +74,43 @@ class Node:
         self.address = address
         self.fragment = id
 
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.s.bind((self.address, PORT_IN))
+
+        self.s.listen()
+
     def __str__(self):
         return str(self.__dict__)
 
-    def send(self, message: Message, node_dst: "Node"):
+    def _send(self, message: Message, node_dst: "Node"):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((self.address, PORT))
+        s.bind((self.address, PORT_OUT))
 
-        s.connect((node_dst.address, PORT))
+        s.connect((node_dst.address, PORT_IN))
         s.send(pickle.dumps(message))
         s.close()
-        print("Node {} ({}) send <{}> to node {} ({})".format(self.id, self.address, message, node_dst.id,
-                                                              node_dst.address))
+        s_print("Node {} ({}) send <{}> to node {} ({})".format(self.id, self.address, message, node_dst.id,
+                                                                node_dst.address))
+
+    def send(self, message: Message, node_dst: "Node"):
+        try:
+            self._send(message, node_dst)
+        except socket.error as exc:
+            self.to_send.put((message, node_dst))
 
     def receive(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((self.address, PORT))
-
-        s.listen()
 
         # Receive data
-        clientsocket, address = s.accept()
+        clientsocket, address = self.s.accept()
         # Retrieve node source from ip
         node_address = address[0]
 
         # Get message
         message = pickle.loads(clientsocket.recv(4096))
 
-        s.close()
+        clientsocket.close()
 
         return node_address, message
 
