@@ -11,7 +11,7 @@ import time
 from typing import List, Optional
 
 from items import Node, Message, MessageType, Neighbour, EdgeState, NodeState
-from utils import read_files, WaitGroup
+from utils import read_files, WaitGroup, bcolors
 from print_ts import s_print
 
 nodes = []  # Contains all nodes
@@ -55,15 +55,6 @@ def initialize(node: Node):
             node.send(Message(MessageType.TEST, []), neigh.node)
 
 
-def try_send(node: Node):
-    # while not node.to_send.empty():
-    if not node.to_send.empty():
-        message, node_to = node.to_send.get()
-        s_print("RETRY : Node {} ({}) send <{}> to node {} ({})".format(node.id, node.address, message, node_to.id,
-                                                                        node_to.address))
-        node.send(message, node_to)
-
-
 def connection_handler(node, node_from):
     if node_from in node.received_connexion and node_from in node.sent_connection:
         node.children.append(node_from)
@@ -84,32 +75,31 @@ def connection_handler(node, node_from):
         node.send(Message(MessageType.NEW_FRAGMENT, []), node, node)
 
 
-def rcv(node: Node, q: queue.Queue):
-    while True:
+def rcv(node: Node, q: queue.Queue, kill: threading.Event):
+    while not kill.wait(1):
+        s_print("Node {} wait for message".format(node.id))
         q.put(node.receive())
 
 
-def process(node, b_init: threading.Barrier, b: threading.Barrier):
+def process(node, b_init: threading.Barrier):
     # Run until the node has terminated
 
     q_work = queue.Queue()
-    rcv_ = threading.Thread(target=rcv, args=(node, q_work))
-    rcv_.start()
+    kill = threading.Event()
+    receive_t = threading.Thread(target=rcv, args=(node, q_work, kill))
+    receive_t.start()
 
     b_init.wait()
 
     while not node.terminated:
+        # If the work queue is not empty
         if not q_work.empty():
-            # try_send(node)
 
-            # Wait for message
-            s_print("Node {} : wait for message".format(node.id))
-
-            # node_from_address, message = node.receive()
+            # Get the message
             node_from_address, message = q_work.get()
+
             node_from = get_node_from_ip(node_from_address)
             message_type = message.message_type
-
             s_print("Node {} receives a {} from node {}".format(node.id, message_type, node_from.id))
 
             match message_type:
@@ -160,9 +150,10 @@ def process(node, b_init: threading.Barrier, b: threading.Barrier):
                         node.send(Message(MessageType.ACK, []), node.parent)
 
                 case MessageType.CONNECT:
-                    neighbour_from: Neighbour = neighbour_from_node(node_from, node.neighbours)
+                    # neighbour_from: Neighbour = neighbour_from_node(node_from, node.neighbours)
 
-                    node.received_connexion.append(neighbour_from.node)
+                    if node_from not in node.received_connexion:
+                        node.received_connexion.append(node_from)
 
                     connection_handler(node, node_from)
 
@@ -171,10 +162,11 @@ def process(node, b_init: threading.Barrier, b: threading.Barrier):
                     if node.to_mwoe == node:
                         # find the minimal weighted neighbour and send a connect to it
                         least_neighbour = find_least_weighted_neighbour(node.neighbours)
-                        node.sent_connection.append(least_neighbour)
+                        if least_neighbour not in node.sent_connection:
+                            node.sent_connection.append(least_neighbour)
                         node.send(Message(MessageType.CONNECT, []), least_neighbour.node)
 
-                        connection_handler(node, node_from)
+                        connection_handler(node, least_neighbour)
 
                     else:
                         node.send(Message(MessageType.MERGE, []), node.to_mwoe)
@@ -186,18 +178,17 @@ def process(node, b_init: threading.Barrier, b: threading.Barrier):
                         node.send(Message(MessageType.REJECT, []), node_from)
 
                 case MessageType.ACCEPT:
-                    node.rejected.append(node_from)
-                    if node_from in node.accepted:
-                        node.accepted.remove(node_from)
+                    node.accepted.append(node_from)
+                    if node_from in node.rejected:
+                        node.rejected.remove(node_from)
 
                     neighbour_from = neighbour_from_node(node_from, node.neighbours)
                     try:
-
                         if neighbour_from.edge.weight < node.min_weight:
                             node.min_weight = neighbour_from.edge.weight
                             node.to_mwoe = node
                     except Exception:
-                        s_print(node, node_from)
+                        print(f"{bcolors.WARNING}{node}{node_from}{bcolors.ENDC}")
 
                     node.barrier -= 1
 
@@ -242,7 +233,9 @@ def process(node, b_init: threading.Barrier, b: threading.Barrier):
                     node.terminated = True
                     # todo: uncomment
                     s_print("Node {} terminated".format(node.id))
-                    pass
+                    kill.set()
+                    receive_t.join()
+                    print(f"{bcolors.OKGREEN}{node.id}terminated{bcolors.ENDC}")
 
             if node.barrier == 0:
 
@@ -257,7 +250,9 @@ def process(node, b_init: threading.Barrier, b: threading.Barrier):
                         node.terminated = True
                         # todo: uncomment
                         s_print("Node {} terminated".format(node.id))
-                        pass
+                        kill.set()
+                        receive_t.join()
+                        print(f"{bcolors.OKGREEN}{node.id}terminated{bcolors.ENDC}")
 
                     else:
                         # merge down
@@ -287,11 +282,10 @@ if __name__ == "__main__":
     nb_nodes = len(nodes)
 
     barrier_init = threading.Barrier(nb_nodes + 1)
-    barrier = threading.Barrier(nb_nodes)
 
     # Start each node in a thread, except root node
     for nd_ in nodes:
-        x = threading.Thread(target=process, args=(nd_, barrier_init, barrier))
+        x = threading.Thread(target=process, args=(nd_, barrier_init))
         x.start()
 
     init_node = Node(0, "127.0.0.1")

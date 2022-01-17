@@ -45,6 +45,7 @@ def read_files(all_files_path):
 
         n.neighbours = edges
         n.to_mwoe = n
+        n.accepted = n.neighbours.copy()
         n.barrier = len(edges)
         n.count = len(edges)
 
@@ -85,3 +86,15 @@ class WaitGroup(object):
         while self.count > 0:
             self.cv.wait()
         self.cv.release()
+
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'

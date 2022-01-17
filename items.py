@@ -91,10 +91,11 @@ class Node:
         s.connect((node_dst.address, PORT_IN))
         s.send(pickle.dumps(message))
         s.close()
-        s_print("Node {} ({}) send <{}> to node {} ({})".format(self.id, self.address, message, node_dst.id,
-                                                                node_dst.address))
+        s_print("Node {} sent <{}> to node {}".format(self.id, message, node_dst.id))
 
     def send(self, message: Message, node_dst: "Node"):
+        if node_dst not in [neigh.node for neigh in self.neighbours] and len(self.neighbours) > 0:
+            s_print("FAIL !!!! {} try to send {} to {}".format(self.id, message.message_type, node_dst.id))
         self._send(message, node_dst)
 
     def receive(self):
