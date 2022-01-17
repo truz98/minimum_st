@@ -84,180 +84,187 @@ def connection_handler(node, node_from):
         node.send(Message(MessageType.NEW_FRAGMENT, []), node, node)
 
 
-def process(node, wait_group):
+def rcv(node: Node, q: queue.Queue):
+    while True:
+        q.put(node.receive())
+
+
+def process(node, b_init: threading.Barrier, b: threading.Barrier):
     # Run until the node has terminated
+
+    q_work = queue.Queue()
+    rcv_ = threading.Thread(target=rcv, args=(node, q_work))
+    rcv_.start()
+
+    b_init.wait()
+
     while not node.terminated:
+        if not q_work.empty():
+            # try_send(node)
 
-        try_send(node)
+            # Wait for message
+            s_print("Node {} : wait for message".format(node.id))
 
-        # initialize(node)
+            # node_from_address, message = node.receive()
+            node_from_address, message = q_work.get()
+            node_from = get_node_from_ip(node_from_address)
+            message_type = message.message_type
 
-        # Wait for message
-        wait_group.done()
-        wait_group.wait()
+            s_print("Node {} receives a {} from node {}".format(node.id, message_type, node_from.id))
 
-        s_print("Node {} : wait for message".format(node.id))
-        node_from_address, message = node.receive()
-        node_from = get_node_from_ip(node_from_address)
-        message_type = message.message_type
-        params = message.param
+            match message_type:
+                case MessageType.INIT:
+                    initialize(node)
+                case MessageType.NEW_FRAGMENT:
+                    # Adopt the node_from fragment
+                    node.fragment = node_from.fragment
+                    node.ack = 0
+                    node.min_weight = sys.maxsize
 
-        s_print("Node {} receives a message from node {}".format(node.id, node_from.id))
+                    if node.id != node_from.fragment:
+                        if node.id != node.parent.id:
+                            # Place the parent in the children if one
+                            parent_neighbour = get_neighbour_of_parent(node)
+                            if parent_neighbour:
+                                parent_neighbour.edge.state = EdgeState.MEMBER
+                                node.children.append(parent_neighbour.node)
 
-        match message_type:
+                        # Change the parent to node_from
+                        node.parent = node_from
+                        # todo: try to remove above line
 
-            case MessageType.INIT:
-                initialize(node)
-            case MessageType.NEW_FRAGMENT:
-                # Adopt the node_from fragment
-                node.fragment = node_from.fragment
-                node.ack = 0
-                node.min_weight = sys.maxsize
+                        # Get neighbour corresponding to the node_from
+                        neighbour_from = neighbour_from_node(node_from, node.neighbours)
 
-                if node.id != node_from.fragment:
-                    if node.id != node.parent.id:
-                        # Place the parent in the children if one
-                        parent_neighbour = get_neighbour_of_parent(node)
-                        if parent_neighbour:
-                            parent_neighbour.edge.state = EdgeState.MEMBER
-                            node.children.append(parent_neighbour.node)
+                        neighbour_from.edge.state = EdgeState.MEMBER
+                        # My parent becom my child
+                        if neighbour_from.node in node.children:
+                            node.children.remove(neighbour_from.node)
 
-                    # Change the parent to node_from
-                    node.parent = node_from
-                    # todo: try to remove above line
+                        node.parent = neighbour_from.node
 
-                    # Get neighbour corresponding to the node_from
-                    neighbour_from = neighbour_from_node(node_from, node.neighbours)
+                    temp = node.received_connexion.copy()
+                    for nd in temp:
+                        if node.parent != nd:
+                            node.received_connexion.remove(nd)
+                            node.children.add(nd)
+                            neighbour_from_node(nd, node.neighbours).edge.state = EdgeState.MEMBER
 
-                    neighbour_from.edge.state = EdgeState.MEMBER
-                    # My parent becom my child
-                    if neighbour_from.node in node.children:
-                        node.children.remove(neighbour_from.node)
+                    # Send NEW_FRAGMENT message to children
+                    for c in node.children:
+                        node.ack += 1
+                        node.send(Message(MessageType.NEW_FRAGMENT, []), c)
 
-                    node.parent = neighbour_from.node
+                    # if no child, send ACK to parent
+                    if len(node.children) == 0:
+                        node.send(Message(MessageType.ACK, []), node.parent)
 
-                temp = node.received_connexion.copy()
-                for nd in temp:
-                    if node.parent != nd:
-                        node.received_connexion.remove(nd)
-                        node.children.add(nd)
-                        neighbour_from_node(nd, node.neighbours).edge.state = EdgeState.MEMBER
+                case MessageType.CONNECT:
+                    neighbour_from: Neighbour = neighbour_from_node(node_from, node.neighbours)
 
-                # Send NEW_FRAGMENT message to children
-                for c in node.children:
-                    node.ack += 1
-                    node.send(Message(MessageType.NEW_FRAGMENT, []), c)
-
-                # if no child, send ACK to parent
-                if len(node.children) == 0:
-                    node.send(Message(MessageType.ACK, []), node.parent)
-
-            case MessageType.CONNECT:
-                neighbour_from: Neighbour = neighbour_from_node(node_from, node.neighbours)
-
-                node.received_connexion.append(neighbour_from.node)
-
-                connection_handler(node, node_from)
-
-            case MessageType.MERGE:
-                # if i'm the root
-                if node.to_mwoe == node:
-                    # find the minimal weighted neighbour and send a connect to it
-                    least_neighbour = find_least_weighted_neighbour(node.neighbours)
-                    node.sent_connection.append(least_neighbour)
-                    node.send(Message(MessageType.CONNECT, []), least_neighbour.node)
+                    node.received_connexion.append(neighbour_from.node)
 
                     connection_handler(node, node_from)
 
-                else:
-                    node.send(Message(MessageType.MERGE, []), node.to_mwoe)
+                case MessageType.MERGE:
+                    # if i'm the root
+                    if node.to_mwoe == node:
+                        # find the minimal weighted neighbour and send a connect to it
+                        least_neighbour = find_least_weighted_neighbour(node.neighbours)
+                        node.sent_connection.append(least_neighbour)
+                        node.send(Message(MessageType.CONNECT, []), least_neighbour.node)
 
-            case MessageType.TEST:
-                if node_from.fragment != node.fragment:
-                    node.send(Message(MessageType.ACCEPT, []), node_from)
-                else:
-                    node.send(Message(MessageType.REJECT, []), node_from)
+                        connection_handler(node, node_from)
 
-            case MessageType.ACCEPT:
-                node.rejected.append(node_from)
-                if node_from in node.accepted:
-                    node.accepted.remove(node_from)
-
-                neighbour_from = neighbour_from_node(node_from, node.neighbours)
-                try:
-
-                    if neighbour_from.edge.weight < node.min_weight:
-                        node.min_weight = neighbour_from.edge.weight
-                        node.to_mwoe = node
-                except Exception:
-                    s_print(node, node_from)
-
-                node.barrier -= 1
-
-            case MessageType.REJECT:
-                node.barrier -= 1
-                node.count -= 1
-
-                node.state = NodeState.IN if node.count == 0 else NodeState.OUT
-
-                node.rejected.append(node_from)
-                if node_from in node.accepted:
-                    node.accepted.remove(node_from)
-
-            case MessageType.REPORT:
-                neighbour_from = neighbour_from_node(node_from, node.neighbours)
-
-                node.barrier -= 1
-                if neighbour_from.edge.weight < node.min_weight:
-                    node.to_mwoe = node_from
-                    node.min_weight = neighbour_from.edge.weight
-
-            case MessageType.ACK:
-                node.ack -= 1
-                if node.ack == 0:
-                    # report to parent if not the root
-                    if node.fragment != node.id:
-                        node.send(Message(MessageType.ACK, []), node.parent)
                     else:
-                        node.send(Message(MessageType.DOTEST, []), node)
+                        node.send(Message(MessageType.MERGE, []), node.to_mwoe)
 
-            case MessageType.DOTEST:
-                node.barrier = 0
-                for neigh in node.neighbours:
-                    if neigh.edge.state == EdgeState.BASIC:
-                        node.barrier += 1
-                        node.send(Message(MessageType.TEST, []), neigh.node)
-                    elif neigh.node in node.children:
-                        node.barrier += 1
-                        node.send(Message(MessageType.DOTEST, []), neigh.node)
+                case MessageType.TEST:
+                    if node_from.fragment != node.fragment:
+                        node.send(Message(MessageType.ACCEPT, []), node_from)
+                    else:
+                        node.send(Message(MessageType.REJECT, []), node_from)
 
-            case MessageType.TERMINATE:
-                # node.terminated = True
-                # todo: uncomment
-                # s_print("Node {} terminated".format(node.id))
-                pass
+                case MessageType.ACCEPT:
+                    node.rejected.append(node_from)
+                    if node_from in node.accepted:
+                        node.accepted.remove(node_from)
 
-        if node.barrier == 0:
+                    neighbour_from = neighbour_from_node(node_from, node.neighbours)
+                    try:
 
-            if node.state == NodeState.OUT:
-                node.count = len(node.neighbours)
+                        if neighbour_from.edge.weight < node.min_weight:
+                            node.min_weight = neighbour_from.edge.weight
+                            node.to_mwoe = node
+                    except Exception:
+                        s_print(node, node_from)
 
-            node.barrier -= 1
+                    node.barrier -= 1
 
-            # The node is the root
-            if node.fragment == node.id:
-                if node.min_weight == sys.maxsize:
-                    # node.terminated = True
+                case MessageType.REJECT:
+                    node.barrier -= 1
+                    node.count -= 1
+
+                    node.state = NodeState.IN if node.count == 0 else NodeState.OUT
+
+                    node.rejected.append(node_from)
+                    if node_from in node.accepted:
+                        node.accepted.remove(node_from)
+
+                case MessageType.REPORT:
+                    neighbour_from = neighbour_from_node(node_from, node.neighbours)
+
+                    node.barrier -= 1
+                    if neighbour_from.edge.weight < node.min_weight:
+                        node.to_mwoe = node_from
+                        node.min_weight = neighbour_from.edge.weight
+
+                case MessageType.ACK:
+                    node.ack -= 1
+                    if node.ack == 0:
+                        # report to parent if not the root
+                        if node.fragment != node.id:
+                            node.send(Message(MessageType.ACK, []), node.parent)
+                        else:
+                            node.send(Message(MessageType.DOTEST, []), node)
+
+                case MessageType.DOTEST:
+                    node.barrier = 0
+                    for neigh in node.neighbours:
+                        if neigh.edge.state == EdgeState.BASIC:
+                            node.barrier += 1
+                            node.send(Message(MessageType.TEST, []), neigh.node)
+                        elif neigh.node in node.children:
+                            node.barrier += 1
+                            node.send(Message(MessageType.DOTEST, []), neigh.node)
+
+                case MessageType.TERMINATE:
+                    node.terminated = True
                     # todo: uncomment
-                    # s_print("Node {} terminated".format(node.id))
+                    s_print("Node {} terminated".format(node.id))
                     pass
 
+            if node.barrier == 0:
+
+                if node.state == NodeState.OUT:
+                    node.count = len(node.neighbours)
+
+                node.barrier -= 1
+
+                # The node is the root
+                if node.fragment == node.id:
+                    if node.min_weight == sys.maxsize:
+                        node.terminated = True
+                        # todo: uncomment
+                        s_print("Node {} terminated".format(node.id))
+                        pass
+
+                    else:
+                        # merge down
+                        node.send(Message(MessageType.MERGE, []), node.to_mwoe)
                 else:
-                    # merge down
-                    node.send(Message(MessageType.MERGE, []), node.to_mwoe)
-            else:
-                # report up
-                node.send(Message(MessageType.REPORT, []), node.parent)
+                    # report up
+                    node.send(Message(MessageType.REPORT, []), node.parent)
 
     for c in node.children:
         node.send(Message(MessageType.TERMINATE, []), c)
@@ -279,18 +286,18 @@ if __name__ == "__main__":
     nodes = read_files(all_files_path)
     nb_nodes = len(nodes)
 
-    waitgroup = WaitGroup()
-    waitgroup.add(nb_nodes + 1)
+    barrier_init = threading.Barrier(nb_nodes + 1)
+    barrier = threading.Barrier(nb_nodes)
 
     # Start each node in a thread, except root node
     for nd_ in nodes:
-        x = threading.Thread(target=process, args=(nd_, waitgroup))
+        x = threading.Thread(target=process, args=(nd_, barrier_init, barrier))
         x.start()
 
     init_node = Node(0, "127.0.0.1")
     nodes.append(init_node)
 
-    waitgroup.done()
-
     for nd_ in nodes[:-1]:
         init_node.send(Message(MessageType.INIT, []), nd_)
+
+    barrier_init.wait()

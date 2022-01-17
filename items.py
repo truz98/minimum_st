@@ -95,13 +95,9 @@ class Node:
                                                                 node_dst.address))
 
     def send(self, message: Message, node_dst: "Node"):
-        try:
-            self._send(message, node_dst)
-        except socket.error as exc:
-            self.to_send.put((message, node_dst))
+        self._send(message, node_dst)
 
     def receive(self):
-
         # Receive data
         clientsocket, address = self.s.accept()
         # Retrieve node source from ip
