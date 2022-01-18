@@ -94,10 +94,13 @@ class Node:
         s_print("Node {} sent <{}> to node {}".format(self.id, message, node_dst.id))
 
     def send(self, message: Message, node_dst: "Node"):
-        if node_dst.id not in [neigh.node.id for neigh in self.neighbours] and len(
-                self.neighbours) > 0 and node_dst.id != self.id:
-            s_print("FAIL !!!! {} try to send {} to {}".format(self.id, message.message_type, node_dst.id))
-        self._send(message, node_dst)
+        try:
+            if node_dst.id not in [neigh.node.id for neigh in self.neighbours] and len(
+                    self.neighbours) > 0 and node_dst.id != self.id:
+                s_print("FAIL !!!! {} try to send {} to {}".format(self.id, message.message_type, node_dst.id))
+            self._send(message, node_dst)
+        except Exception:
+            s_print("EXEPTION !!!! {} try to send {} to None".format(self.id, message.message_type))
 
     def receive(self):
         # Receive data

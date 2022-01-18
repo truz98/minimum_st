@@ -98,7 +98,10 @@ def process(node, b_init: threading.Barrier):
     b_init.wait()
 
     while not node.terminated:
-        # If the work queue is not empty
+
+        if node.id in node.children:
+            node.children.remove(node.id)
+
         if not q_work.empty():
 
             # Get the message
@@ -152,7 +155,8 @@ def process(node, b_init: threading.Barrier):
                                 s_print("!!!!!!!! Node {} has not node {} as neighbour".format(node.id, nd_id))
 
                     # Send NEW_FRAGMENT message to children
-                    for c_id in node.children:
+                    tmp = node.children.copy()
+                    for c_id in tmp:
                         node.ack += 1
                         child_node = neighbour_from_id(c_id, node.neighbours)
                         if child_node:
@@ -161,7 +165,7 @@ def process(node, b_init: threading.Barrier):
                             s_print("!!!!!!!! Node {} has not  {} as child".format(node.id, c_id))
 
                     # if no child, send ACK to parent
-                    if len(node.children) == 0:
+                    if len(node.children) == 0 and node.parent:
                         node.send(Message(MessageType.ACK, []), node.parent)
 
                 case MessageType.CONNECT:
@@ -227,7 +231,8 @@ def process(node, b_init: threading.Barrier):
                     if node.ack == 0:
                         # report to parent if not the root
                         if node.fragment != node.id:
-                            node.send(Message(MessageType.ACK, []), node.parent)
+                            if node.parent:
+                                node.send(Message(MessageType.ACK, []), node.parent)
                         else:
                             node.send(Message(MessageType.DOTEST, []), node)
 
@@ -280,26 +285,32 @@ def process(node, b_init: threading.Barrier):
 
 if __name__ == "__main__":
     # Declare all files path here
+
+    directory = "Neighbours_simple"
+
     all_files_path = [
-        os.path.join("Neighbours", "node-1.yaml"),
-        os.path.join("Neighbours", "node-2.yaml"),
-        os.path.join("Neighbours", "node-3.yaml"),
-        os.path.join("Neighbours", "node-4.yaml"),
-        os.path.join("Neighbours", "node-5.yaml"),
-        os.path.join("Neighbours", "node-6.yaml"),
-        os.path.join("Neighbours", "node-7.yaml"),
-        os.path.join("Neighbours", "node-8.yaml"),
+        os.path.join(directory, "node-1.yaml"),
+        os.path.join(directory, "node-2.yaml"),
+        os.path.join(directory, "node-3.yaml"),
+        # os.path.join(directory, "node-4.yaml"),
+        # os.path.join(directory, "node-5.yaml"),
+        # os.path.join(directory, "node-6.yaml"),
+        # os.path.join(directory, "node-7.yaml"),
+        # os.path.join(directory, "node-8.yaml"),
+        # os.path.join(directory, "node-9.yaml"),
     ]
     # Read data from files
     nodes = read_files(all_files_path)
     nb_nodes = len(nodes)
 
-    barrier_init = threading.Barrier(nb_nodes + 1)
+    barrier_init = threading.Barrier(nb_nodes)
 
     # Start each node in a thread, except root node
+    threads = []
     for nd_ in nodes:
         x = threading.Thread(target=process, args=(nd_, barrier_init))
         x.start()
+        threads.append(x)
 
     init_node = Node(0, "127.0.0.1")
     nodes.append(init_node)
@@ -307,4 +318,5 @@ if __name__ == "__main__":
     for nd_ in nodes[:-1]:
         init_node.send(Message(MessageType.INIT, []), nd_)
 
-    barrier_init.wait()
+    for t in threads:
+        t.join()
