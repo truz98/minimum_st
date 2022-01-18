@@ -36,7 +36,7 @@ def find_least_weighted_neighbour(neighbours: List[Neighbour]):
 
 def get_neighbour_of_parent(node: Node) -> Optional[Neighbour]:
     for neigh in node.neighbours:
-        if neigh.node.parent == node.parent:
+        if neigh.node.parent and node.parent and neigh.node.parent.id == node.parent.id:
             return neigh
 
     return None
@@ -44,7 +44,13 @@ def get_neighbour_of_parent(node: Node) -> Optional[Neighbour]:
 
 def neighbour_from_node(node: Node, neighbors: List[Neighbour]) -> Neighbour:
     for neigh in neighbors:
-        if neigh.node == node:
+        if neigh.node.id == node.id:
+            return neigh
+
+
+def neighbour_from_id(id: int, neighbors: List[Neighbour]) -> Neighbour:
+    for neigh in neighbors:
+        if neigh.node.id == id:
             return neigh
 
 
@@ -56,8 +62,8 @@ def initialize(node: Node):
 
 
 def connection_handler(node, node_from):
-    if node_from in node.received_connexion and node_from in node.sent_connection:
-        node.children.append(node_from)
+    if node_from.id in node.received_connexion and node_from.id in node.sent_connection:
+        node.children.add(node_from.id)
         neighbour_from = neighbour_from_node(node_from, node.neighbours)
         neighbour_from.edge.state = EdgeState.MEMBER
 
@@ -65,14 +71,14 @@ def connection_handler(node, node_from):
             parent_neighbour = get_neighbour_of_parent(node)
 
             parent_neighbour.edge.state = EdgeState.MEMBER
-            node.children.append(parent_neighbour.node)
+            node.children.add(parent_neighbour.node.id)
             node.fragment = node.id
             node.parent = node
 
-        node.sent_connection.remove(node_from)
-        node.received_connexion.remove(node_from)
+        node.sent_connection.remove(node_from.id)
+        node.received_connexion.remove(node_from.id)
 
-        node.send(Message(MessageType.NEW_FRAGMENT, []), node, node)
+        node.send(Message(MessageType.NEW_FRAGMENT, []), node)
 
 
 def rcv(node: Node, q: queue.Queue, kill: threading.Event):
@@ -112,12 +118,12 @@ def process(node, b_init: threading.Barrier):
                     node.min_weight = sys.maxsize
 
                     if node.id != node_from.fragment:
-                        if node.id != node.parent.id:
+                        if node.parent and node.id != node.parent.id:
                             # Place the parent in the children if one
                             parent_neighbour = get_neighbour_of_parent(node)
                             if parent_neighbour:
                                 parent_neighbour.edge.state = EdgeState.MEMBER
-                                node.children.append(parent_neighbour.node)
+                                node.children.add(node.parent.id)
 
                         # Change the parent to node_from
                         node.parent = node_from
@@ -128,32 +134,39 @@ def process(node, b_init: threading.Barrier):
 
                         neighbour_from.edge.state = EdgeState.MEMBER
                         # My parent becom my child
-                        if neighbour_from.node in node.children:
-                            node.children.remove(neighbour_from.node)
+                        if neighbour_from.node.id in node.children:
+                            node.children.remove(node_from.id)
 
                         node.parent = neighbour_from.node
 
                     temp = node.received_connexion.copy()
-                    for nd in temp:
-                        if node.parent != nd:
-                            node.received_connexion.remove(nd)
-                            node.children.add(nd)
-                            neighbour_from_node(nd, node.neighbours).edge.state = EdgeState.MEMBER
+                    for nd_id in temp:
+                        if node.parent and node.parent.id != nd_id:
+                            node.received_connexion.remove(nd_id)
+                            node.children.add(node_from.id)
+
+                            neighbour_from = neighbour_from_id(nd_id, node.neighbours)
+                            if neighbour_from:
+                                neighbour_from.edge.state = EdgeState.MEMBER
+                            else:
+                                s_print("!!!!!!!! Node {} has not node {} as neighbour".format(node.id, nd_id))
 
                     # Send NEW_FRAGMENT message to children
-                    for c in node.children:
+                    for c_id in node.children:
                         node.ack += 1
-                        node.send(Message(MessageType.NEW_FRAGMENT, []), c)
+                        child_node = neighbour_from_id(c_id, node.neighbours)
+                        if child_node:
+                            node.send(Message(MessageType.NEW_FRAGMENT, []), child_node.node)
+                        else:
+                            s_print("!!!!!!!! Node {} has not  {} as child".format(node.id, c_id))
 
                     # if no child, send ACK to parent
                     if len(node.children) == 0:
                         node.send(Message(MessageType.ACK, []), node.parent)
 
                 case MessageType.CONNECT:
-                    # neighbour_from: Neighbour = neighbour_from_node(node_from, node.neighbours)
-
-                    if node_from not in node.received_connexion:
-                        node.received_connexion.append(node_from)
+                    # s_print("!!!!! Node {} add received connexion from {}".format(node.id, node_from.id))
+                    node.received_connexion.add(node_from.id)
 
                     connection_handler(node, node_from)
 
@@ -162,11 +175,10 @@ def process(node, b_init: threading.Barrier):
                     if node.to_mwoe == node:
                         # find the minimal weighted neighbour and send a connect to it
                         least_neighbour = find_least_weighted_neighbour(node.neighbours)
-                        if least_neighbour not in node.sent_connection:
-                            node.sent_connection.append(least_neighbour)
+                        node.sent_connection.add(least_neighbour.node.id)
                         node.send(Message(MessageType.CONNECT, []), least_neighbour.node)
 
-                        connection_handler(node, least_neighbour)
+                        connection_handler(node, least_neighbour.node)
 
                     else:
                         node.send(Message(MessageType.MERGE, []), node.to_mwoe)
@@ -225,7 +237,7 @@ def process(node, b_init: threading.Barrier):
                         if neigh.edge.state == EdgeState.BASIC:
                             node.barrier += 1
                             node.send(Message(MessageType.TEST, []), neigh.node)
-                        elif neigh.node in node.children:
+                        elif neigh.node.id in node.children:
                             node.barrier += 1
                             node.send(Message(MessageType.DOTEST, []), neigh.node)
 
@@ -261,8 +273,9 @@ def process(node, b_init: threading.Barrier):
                     # report up
                     node.send(Message(MessageType.REPORT, []), node.parent)
 
-    for c in node.children:
-        node.send(Message(MessageType.TERMINATE, []), c)
+    for c_id in node.children:
+        child_neighbour = neighbour_from_id(c_id, node.neighbours)
+        node.send(Message(MessageType.TERMINATE, []), child_neighbour.node)
 
 
 if __name__ == "__main__":

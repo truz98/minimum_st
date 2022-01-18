@@ -3,7 +3,7 @@ import queue
 import sys
 import time
 from enum import Enum
-from typing import List
+from typing import List, Set
 import socket
 
 from print_ts import s_print
@@ -56,9 +56,9 @@ class Node:
     state: NodeState = NodeState.OUT
     neighbours: List["Neighbour"] = []  # Set of children
     terminated: bool = False  # Use to stop the algorithm
-    children: List["Neighbour"] = []
-    received_connexion: List["Node"] = []
-    sent_connection: List["Node"] = []
+    children: Set["Neighbour"] = set()
+    received_connexion: Set[int] = set()
+    sent_connection: Set[int] = set()
     accepted: List["Node"] = []
     rejected: List["Node"] = []
     min_weight: int = sys.maxsize
@@ -94,7 +94,8 @@ class Node:
         s_print("Node {} sent <{}> to node {}".format(self.id, message, node_dst.id))
 
     def send(self, message: Message, node_dst: "Node"):
-        if node_dst not in [neigh.node for neigh in self.neighbours] and len(self.neighbours) > 0:
+        if node_dst.id not in [neigh.node.id for neigh in self.neighbours] and len(
+                self.neighbours) > 0 and node_dst.id != self.id:
             s_print("FAIL !!!! {} try to send {} to {}".format(self.id, message.message_type, node_dst.id))
         self._send(message, node_dst)
 
