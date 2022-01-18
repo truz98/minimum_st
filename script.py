@@ -1,6 +1,7 @@
 """
     Algorithm : Constructing a Minimum Spanning Tree
 """
+import copy
 import pickle
 import os
 import queue
@@ -58,7 +59,7 @@ def initialize(node: Node):
     node.barrier = len(node.neighbours)
     for neigh in node.neighbours:
         if neigh.edge.state == EdgeState.BASIC:
-            node.send(Message(MessageType.TEST, []), neigh.node)
+            node.send(Message(MessageType.TEST, []), copy.copy(neigh.node))
 
 
 def connection_handler(node, node_from):
@@ -78,12 +79,13 @@ def connection_handler(node, node_from):
         node.sent_connection.remove(node_from.id)
         node.received_connexion.remove(node_from.id)
 
-        node.send(Message(MessageType.NEW_FRAGMENT, []), node)
+        s_print("Node {} new fragment and becomes root".format(node.id))
+        node.send(Message(MessageType.NEW_FRAGMENT, []), copy.copy(node))
 
 
 def rcv(node: Node, q: queue.Queue, kill: threading.Event):
     while not kill.wait(1):
-        s_print("Node {} wait for message".format(node.id))
+        # s_print("Node {} wait for message".format(node.id))
         q.put(node.receive())
 
 
@@ -160,13 +162,13 @@ def process(node, b_init: threading.Barrier):
                         node.ack += 1
                         child_node = neighbour_from_id(c_id, node.neighbours)
                         if child_node:
-                            node.send(Message(MessageType.NEW_FRAGMENT, []), child_node.node)
+                            node.send(Message(MessageType.NEW_FRAGMENT, []), copy.copy(child_node.node))
                         else:
                             s_print("!!!!!!!! Node {} has not  {} as child".format(node.id, c_id))
 
                     # if no child, send ACK to parent
                     if len(node.children) == 0 and node.parent:
-                        node.send(Message(MessageType.ACK, []), node.parent)
+                        node.send(Message(MessageType.ACK, []), copy.copy(node.parent))
 
                 case MessageType.CONNECT:
                     # s_print("!!!!! Node {} add received connexion from {}".format(node.id, node_from.id))
@@ -180,18 +182,18 @@ def process(node, b_init: threading.Barrier):
                         # find the minimal weighted neighbour and send a connect to it
                         least_neighbour = find_least_weighted_neighbour(node.neighbours)
                         node.sent_connection.add(least_neighbour.node.id)
-                        node.send(Message(MessageType.CONNECT, []), least_neighbour.node)
+                        node.send(Message(MessageType.CONNECT, []), copy.copy(least_neighbour.node))
 
                         connection_handler(node, least_neighbour.node)
 
                     else:
-                        node.send(Message(MessageType.MERGE, []), node.to_mwoe)
+                        node.send(Message(MessageType.MERGE, []), copy.copy(node.to_mwoe))
 
                 case MessageType.TEST:
                     if node_from.fragment != node.fragment:
-                        node.send(Message(MessageType.ACCEPT, []), node_from)
+                        node.send(Message(MessageType.ACCEPT, []), copy.copy(node_from))
                     else:
-                        node.send(Message(MessageType.REJECT, []), node_from)
+                        node.send(Message(MessageType.REJECT, []), copy.copy(node_from))
 
                 case MessageType.ACCEPT:
                     node.accepted.append(node_from)
@@ -232,19 +234,19 @@ def process(node, b_init: threading.Barrier):
                         # report to parent if not the root
                         if node.fragment != node.id:
                             if node.parent:
-                                node.send(Message(MessageType.ACK, []), node.parent)
+                                node.send(Message(MessageType.ACK, []), copy.copy(node.parent))
                         else:
-                            node.send(Message(MessageType.DOTEST, []), node)
+                            node.send(Message(MessageType.DOTEST, []), copy.copy(node))
 
                 case MessageType.DOTEST:
                     node.barrier = 0
                     for neigh in node.neighbours:
                         if neigh.edge.state == EdgeState.BASIC:
                             node.barrier += 1
-                            node.send(Message(MessageType.TEST, []), neigh.node)
+                            node.send(Message(MessageType.TEST, []), copy.copy(neigh.node))
                         elif neigh.node.id in node.children:
                             node.barrier += 1
-                            node.send(Message(MessageType.DOTEST, []), neigh.node)
+                            node.send(Message(MessageType.DOTEST, []), copy.copy(neigh.node))
 
                 case MessageType.TERMINATE:
                     node.terminated = True
@@ -255,7 +257,7 @@ def process(node, b_init: threading.Barrier):
                     print(f"{bcolors.OKGREEN}{node.id}terminated{bcolors.ENDC}")
 
             if node.barrier == 0:
-
+                s_print("Node {} passed barrier".format(node.id))
                 if node.state == NodeState.OUT:
                     node.count = len(node.neighbours)
 
@@ -263,6 +265,7 @@ def process(node, b_init: threading.Barrier):
 
                 # The node is the root
                 if node.fragment == node.id:
+                    s_print("Node {} his min. weight = {}".format(node.id, node.min_weight))
                     if node.min_weight == sys.maxsize:
                         node.terminated = True
                         # todo: uncomment
@@ -273,14 +276,14 @@ def process(node, b_init: threading.Barrier):
 
                     else:
                         # merge down
-                        node.send(Message(MessageType.MERGE, []), node.to_mwoe)
+                        node.send(Message(MessageType.MERGE, []), copy.copy(node.to_mwoe))
                 else:
                     # report up
-                    node.send(Message(MessageType.REPORT, []), node.parent)
+                    node.send(Message(MessageType.REPORT, []), copy.copy(node.parent))
 
     for c_id in node.children:
-        child_neighbour = neighbour_from_id(c_id, node.neighbours)
-        node.send(Message(MessageType.TERMINATE, []), child_neighbour.node)
+        child_neighbour = neighbour_from_id(c_id, copy.copy(node.neighbours))
+        node.send(Message(MessageType.TERMINATE, []), copy.copy(child_neighbour.node))
 
 
 if __name__ == "__main__":
