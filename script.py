@@ -71,7 +71,7 @@ def connection_handler(node, node_from):
             parent_neighbour = get_neighbour_of_parent(node)
 
             parent_neighbour.edge.state = EdgeState.MEMBER
-            node.children.add(parent_neighbour.node.id)
+            node.children.add(node.parent.id)
             node.fragment = node.id
             node.parent = node
 
