@@ -37,7 +37,7 @@ def find_least_weighted_neighbour(neighbours: List[Neighbour]):
 
 def get_neighbour_of_parent(node: Node) -> Optional[Neighbour]:
     for neigh in node.neighbours:
-        if neigh.node.parent and node.parent and neigh.node.parent.id == node.parent.id:
+        if neigh.node.parent == node.parent:
             return neigh
 
     return None
@@ -64,7 +64,8 @@ def initialize(node: Node):
 
 def connection_handler(node, node_from):
     if node_from.id in node.received_connexion and node_from.id in node.sent_connection:
-        node.children.add(node_from.id)
+        if node.id != node_from.id:
+            node.children.add(node_from.id)
         neighbour_from = neighbour_from_node(node_from, node.neighbours)
         neighbour_from.edge.state = EdgeState.MEMBER
 
@@ -72,10 +73,11 @@ def connection_handler(node, node_from):
             parent_neighbour = get_neighbour_of_parent(node)
 
             parent_neighbour.edge.state = EdgeState.MEMBER
-            node.children.add(node.parent.id)
+            if node.id != node.parent:
+                node.children.add(node.parent)
             node.fragment = node.id
             s_print("NODE CONNECTION HANDLER %d" % node.id)
-            node.parent = node
+            node.parent = node.id
 
         node.sent_connection.remove(node_from.id)
         node.received_connexion.remove(node_from.id)
@@ -124,16 +126,17 @@ def process(node, b_init: threading.Barrier):
                     node.min_weight = sys.maxsize
 
                     if node.id != node_from.fragment:
-                        if node.parent and node.id != node.parent.id:
+                        if node.id != node.parent:
                             # Place the parent in the children if one
                             parent_neighbour = get_neighbour_of_parent(node)
                             if parent_neighbour:
                                 parent_neighbour.edge.state = EdgeState.MEMBER
-                                node.children.add(node.parent.id)
+                                if node.parent != node.id:
+                                    node.children.add(node.parent)
 
                         # Change the parent to node_from
                         s_print("NODE NEW FRAGMENT %d" % node_from.id)
-                        node.parent = node_from
+                        node.parent = node_from.id
                         # todo: try to remove above line
 
                         # Get neighbour corresponding to the node_from
@@ -141,16 +144,18 @@ def process(node, b_init: threading.Barrier):
 
                         neighbour_from.edge.state = EdgeState.MEMBER
                         # My parent becom my child
-                        if neighbour_from.node.id in node.children:
+                        if neighbour_from.node.id in node.children and node.id != node_from.id:
                             node.children.remove(node_from.id)
 
-                        node.parent = neighbour_from.node
+                        node.parent = neighbour_from.node.id
 
                     temp = node.received_connexion.copy()
                     for nd_id in temp:
-                        if node.parent and node.parent.id != nd_id:
+                        if node.parent != nd_id:
                             node.received_connexion.remove(nd_id)
-                            node.children.add(node_from.id)
+
+                            if node.id != node_from.id:
+                                node.children.add(node_from.id)
 
                             neighbour_from = neighbour_from_id(nd_id, node.neighbours)
                             if neighbour_from:
@@ -170,7 +175,10 @@ def process(node, b_init: threading.Barrier):
 
                     # if no child, send ACK to parent
                     if len(node.children) == 0:
-                        node.send(Message(MessageType.ACK, []), copy.copy(node.parent))
+                        if node.id == node.parent:
+                            node.send(Message(MessageType.ACK, []), copy.copy(node))
+                        else:
+                            node.send(Message(MessageType.ACK, []), copy.copy(neighbour_from_id(node.parent, node.neighbours)))
 
                 case MessageType.CONNECT:
                     # s_print("!!!!! Node {} add received connexion from {}".format(node.id, node_from.id))
@@ -235,8 +243,11 @@ def process(node, b_init: threading.Barrier):
                     if node.ack == 0:
                         # report to parent if not the root
                         if node.fragment != node.id:
-                            if node.parent:
-                                node.send(Message(MessageType.ACK, []), copy.copy(node.parent))
+                            if node.id == node.parent:
+                                node.send(Message(MessageType.ACK, []), copy.copy(node))
+                            else:
+                                node.send(Message(MessageType.ACK, []), copy.copy(neighbour_from_id(node.parent, node.neighbours)))
+
                         else:
                             node.send(Message(MessageType.DOTEST, []), copy.copy(node))
 
@@ -281,7 +292,10 @@ def process(node, b_init: threading.Barrier):
                         node.send(Message(MessageType.MERGE, []), copy.copy(node.to_mwoe))
                 else:
                     # report up
-                    node.send(Message(MessageType.REPORT, []), copy.copy(node.parent))
+                    if node.id == node.parent:
+                        node.send(Message(MessageType.REPORT, []), copy.copy(node))
+                    else:
+                        node.send(Message(MessageType.REPORT, []), copy.copy(neighbour_from_id(node.parent, node.neighbours)))
 
     for c_id in node.children:
         child_neighbour = neighbour_from_id(c_id, copy.copy(node.neighbours))

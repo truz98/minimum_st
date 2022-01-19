@@ -48,7 +48,6 @@ def read_files(all_files_path):
         n.accepted = n.neighbours.copy()
         n.barrier = len(edges)
         n.count = len(edges)
-        n.parent = n
 
     return nodes
 

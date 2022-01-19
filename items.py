@@ -52,7 +52,7 @@ class Node:
     address: str  # Address of this node
     to_mwoe: "Node"
 
-    parent: "Node" = None  # Parent
+    parent: int  # Parent
     state: NodeState = NodeState.OUT
     neighbours: List["Neighbour"] = []  # Set of children
     terminated: bool = False  # Use to stop the algorithm
@@ -73,6 +73,7 @@ class Node:
         self.id = id
         self.address = address
         self.fragment = id
+        self.parent = id
 
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
