@@ -74,6 +74,7 @@ def connection_handler(node, node_from):
             parent_neighbour.edge.state = EdgeState.MEMBER
             node.children.add(node.parent.id)
             node.fragment = node.id
+            s_print("NODE CONNECTION HANDLER %d" % node.id)
             node.parent = node
 
         node.sent_connection.remove(node_from.id)
@@ -131,6 +132,7 @@ def process(node, b_init: threading.Barrier):
                                 node.children.add(node.parent.id)
 
                         # Change the parent to node_from
+                        s_print("NODE NEW FRAGMENT %d" % node_from.id)
                         node.parent = node_from
                         # todo: try to remove above line
 
@@ -160,14 +162,14 @@ def process(node, b_init: threading.Barrier):
                     tmp = node.children.copy()
                     for c_id in tmp:
                         node.ack += 1
-                        child_node = neighbour_from_id(c_id, node.neighbours)
-                        if child_node:
-                            node.send(Message(MessageType.NEW_FRAGMENT, []), copy.copy(child_node.node))
+                        child_neighbour = neighbour_from_id(c_id, node.neighbours)
+                        if child_neighbour:
+                            node.send(Message(MessageType.NEW_FRAGMENT, []), copy.copy(child_neighbour.node))
                         else:
                             s_print("!!!!!!!! Node {} has not  {} as child".format(node.id, c_id))
 
                     # if no child, send ACK to parent
-                    if len(node.children) == 0 and node.parent:
+                    if len(node.children) == 0:
                         node.send(Message(MessageType.ACK, []), copy.copy(node.parent))
 
                 case MessageType.CONNECT:
