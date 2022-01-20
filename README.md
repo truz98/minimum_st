@@ -2,7 +2,7 @@
 
 URL du *repository* : https://github.com/truz98/minimum_st
 
-## Executuon
+### Exécution
 
 ```
 python run script.py 
