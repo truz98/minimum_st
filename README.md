@@ -15,9 +15,9 @@ Mathieu Lamon
 
 ### Remarques
 
-Nous avons malheureusement pas réussi à terminer complétement l'algorithme. Il semble que dans certaines situations, les noeuds envoient des messages à d'autrs noeuds qui ne sont pas leur voisin.
+Nous n'avons malheureusement pas réussi à terminer complètement l'algorithme. Il semble que, dans certaines situations, les noeuds envoient des messages à d'autres noeuds qui ne sont pas leurs voisins.
 <br/>
-Malgré un nombre d'heures conséquant mise à profit, nous n'avons pas pu trouvé l'origine du problème
+Malgré un nombre d'heures conséquant mise à profit, nous n'avons pas pu trouver l'origine du problème.
 
 #### Exemples d'exécution
 Exécution avec graph "simple" ne se terminant pas : simple_not_ending.txt
