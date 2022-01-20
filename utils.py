@@ -1,3 +1,5 @@
+from typing import Optional, List
+
 import yaml
 
 from items import Edge, Node, Neighbour
@@ -52,40 +54,37 @@ def read_files(all_files_path):
     return nodes
 
 
-def find_least_weighted_edge(edges):
-    return min(edges, key=lambda x: x[0].weight)
+# Find the least weighted neighbour
+def find_least_weighted_neighbour(neighbours: List[Neighbour]):
+    least_weighted = neighbours[0]
+    for neigh in neighbours[1:]:
+        if neigh.edge.weight < least_weighted.edge.weight:
+            least_weighted = neigh
+
+    return least_weighted
 
 
-def find_edge_of_node(edges, node):
-    for e in edges:
-        if e[1] == node:
-            return e[0]
+# Get the neighbour of the parent
+def get_neighbour_of_parent(node: Node) -> Optional[Neighbour]:
+    for neigh in node.neighbours:
+        if neigh.node.parent == node.parent:
+            return neigh
 
-    raise Exception
+    return None
 
 
-class WaitGroup(object):
-    def __init__(self):
-        self.count = 0
-        self.cv = threading.Condition()
+# Get the neighbour corresponding to a node
+def neighbour_from_node(node: Node, neighbors: List[Neighbour]) -> Neighbour:
+    for neigh in neighbors:
+        if neigh.node.id == node.id:
+            return neigh
 
-    def add(self, n):
-        self.cv.acquire()
-        self.count += n
-        self.cv.release()
 
-    def done(self):
-        self.cv.acquire()
-        self.count -= 1
-        if self.count == 0:
-            self.cv.notify_all()
-        self.cv.release()
-
-    def wait(self):
-        self.cv.acquire()
-        while self.count > 0:
-            self.cv.wait()
-        self.cv.release()
+# Get the neighbour corresponding to an id
+def neighbour_from_id(id: int, neighbors: List[Neighbour]) -> Neighbour:
+    for neigh in neighbors:
+        if neigh.node.id == id:
+            return neigh
 
 
 class bcolors:

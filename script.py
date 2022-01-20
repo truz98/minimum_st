@@ -2,23 +2,21 @@
     Algorithm : Constructing a Minimum Spanning Tree
 """
 import copy
-import pickle
 import os
 import queue
-import socket
 import sys
 import threading
-import time
 from typing import List, Optional
 
 from items import Node, Message, MessageType, Neighbour, EdgeState, NodeState
-from utils import read_files, WaitGroup, bcolors
+from utils import read_files, bcolors, neighbour_from_node, get_neighbour_of_parent, neighbour_from_id, \
+    find_least_weighted_neighbour
 from print_ts import s_print
 
 nodes = []  # Contains all nodes
-PORT = 12345
 
 
+# Retrieve node from ip
 def get_node_from_ip(ip):
     # Retrieve node from ip. Return node
     for neigh in nodes:
@@ -26,35 +24,8 @@ def get_node_from_ip(ip):
             return neigh
 
 
-def find_least_weighted_neighbour(neighbours: List[Neighbour]):
-    least_weighted = neighbours[0]
-    for neigh in neighbours[1:]:
-        if neigh.edge.weight < least_weighted.edge.weight:
-            least_weighted = neigh
 
-    return least_weighted
-
-
-def get_neighbour_of_parent(node: Node) -> Optional[Neighbour]:
-    for neigh in node.neighbours:
-        if neigh.node.parent == node.parent:
-            return neigh
-
-    return None
-
-
-def neighbour_from_node(node: Node, neighbors: List[Neighbour]) -> Neighbour:
-    for neigh in neighbors:
-        if neigh.node.id == node.id:
-            return neigh
-
-
-def neighbour_from_id(id: int, neighbors: List[Neighbour]) -> Neighbour:
-    for neigh in neighbors:
-        if neigh.node.id == id:
-            return neigh
-
-
+# Initialize all nodes
 def initialize(node: Node):
     node.barrier = len(node.neighbours)
     for neigh in node.neighbours:
@@ -62,7 +33,8 @@ def initialize(node: Node):
             node.send(Message(MessageType.TEST, []), copy.copy(neigh.node))
 
 
-def connection_handler(node, node_from):
+# Manage the case when Node A and B sent both a CONNEXION request
+def connexions_manager(node, node_from):
     if node_from.id in node.received_connexion and node_from.id in node.sent_connection:
         if node.id != node_from.id:
             node.children.add(node_from.id)
@@ -76,7 +48,6 @@ def connection_handler(node, node_from):
             if node.id != node.parent:
                 node.children.add(node.parent)
             node.fragment = node.id
-            s_print("NODE CONNECTION HANDLER %d" % node.id)
             node.parent = node.id
 
         node.sent_connection.remove(node_from.id)
@@ -86,29 +57,29 @@ def connection_handler(node, node_from):
         node.send(Message(MessageType.NEW_FRAGMENT, []), copy.copy(node))
 
 
-def rcv(node: Node, q: queue.Queue, kill: threading.Event):
+# Function used in thread to listen to the socket and store the message in the queue
+def process_receiver(node: Node, q: queue.Queue, kill: threading.Event):
     while not kill.wait(1):
-        # s_print("Node {} wait for message".format(node.id))
         q.put(node.receive())
 
 
 def process(node, b_init: threading.Barrier):
-    # Run until the node has terminated
-
+    # Set up the queue and the receiver thread
     q_work = queue.Queue()
     kill = threading.Event()
-    receive_t = threading.Thread(target=rcv, args=(node, q_work, kill))
+    receive_t = threading.Thread(target=process_receiver, args=(node, q_work, kill))
     receive_t.start()
 
     b_init.wait()
 
+    # Run until the node has terminated
     while not node.terminated:
 
         if node.id in node.children:
             node.children.remove(node.id)
 
+        # If there is a message in the queue
         if not q_work.empty():
-
             # Get the message
             node_from_address, message = q_work.get()
 
@@ -133,11 +104,6 @@ def process(node, b_init: threading.Barrier):
                                 parent_neighbour.edge.state = EdgeState.MEMBER
                                 if node.parent != node.id:
                                     node.children.add(node.parent)
-
-                        # Change the parent to node_from
-                        s_print("NODE NEW FRAGMENT %d" % node_from.id)
-                        node.parent = node_from.id
-                        # todo: try to remove above line
 
                         # Get neighbour corresponding to the node_from
                         neighbour_from = neighbour_from_node(node_from, node.neighbours)
@@ -178,13 +144,13 @@ def process(node, b_init: threading.Barrier):
                         if node.id == node.parent:
                             node.send(Message(MessageType.ACK, []), copy.copy(node))
                         else:
-                            node.send(Message(MessageType.ACK, []), copy.copy(neighbour_from_id(node.parent, node.neighbours)))
+                            node.send(Message(MessageType.ACK, []),
+                                      copy.copy(neighbour_from_id(node.parent, node.neighbours)))
 
                 case MessageType.CONNECT:
-                    # s_print("!!!!! Node {} add received connexion from {}".format(node.id, node_from.id))
                     node.received_connexion.add(node_from.id)
 
-                    connection_handler(node, node_from)
+                    connexions_manager(node, node_from)
 
                 case MessageType.MERGE:
                     # if i'm the root
@@ -194,7 +160,7 @@ def process(node, b_init: threading.Barrier):
                         node.sent_connection.add(least_neighbour.node.id)
                         node.send(Message(MessageType.CONNECT, []), copy.copy(least_neighbour.node))
 
-                        connection_handler(node, least_neighbour.node)
+                        connexions_manager(node, least_neighbour.node)
 
                     else:
                         node.send(Message(MessageType.MERGE, []), copy.copy(node.to_mwoe))
@@ -246,7 +212,8 @@ def process(node, b_init: threading.Barrier):
                             if node.id == node.parent:
                                 node.send(Message(MessageType.ACK, []), copy.copy(node))
                             else:
-                                node.send(Message(MessageType.ACK, []), copy.copy(neighbour_from_id(node.parent, node.neighbours)))
+                                node.send(Message(MessageType.ACK, []),
+                                          copy.copy(neighbour_from_id(node.parent, node.neighbours)))
 
                         else:
                             node.send(Message(MessageType.DOTEST, []), copy.copy(node))
@@ -263,7 +230,6 @@ def process(node, b_init: threading.Barrier):
 
                 case MessageType.TERMINATE:
                     node.terminated = True
-                    # todo: uncomment
                     s_print("Node {} terminated".format(node.id))
                     kill.set()
                     receive_t.join()
@@ -281,7 +247,6 @@ def process(node, b_init: threading.Barrier):
                     s_print("Node {} his min. weight = {}".format(node.id, node.min_weight))
                     if node.min_weight == sys.maxsize:
                         node.terminated = True
-                        # todo: uncomment
                         s_print("Node {} terminated".format(node.id))
                         kill.set()
                         receive_t.join()
@@ -295,7 +260,8 @@ def process(node, b_init: threading.Barrier):
                     if node.id == node.parent:
                         node.send(Message(MessageType.REPORT, []), copy.copy(node))
                     else:
-                        node.send(Message(MessageType.REPORT, []), copy.copy(neighbour_from_id(node.parent, node.neighbours)))
+                        node.send(Message(MessageType.REPORT, []),
+                                  copy.copy(neighbour_from_id(node.parent, node.neighbours)))
 
     for c_id in node.children:
         child_neighbour = neighbour_from_id(c_id, copy.copy(node.neighbours))
@@ -303,7 +269,6 @@ def process(node, b_init: threading.Barrier):
 
 
 if __name__ == "__main__":
-    # Declare all files path here
 
     directory = "Neighbours_simple"
 
@@ -318,24 +283,28 @@ if __name__ == "__main__":
         # os.path.join(directory, "node-8.yaml"),
         # os.path.join(directory, "node-9.yaml"),
     ]
-    # Read data from files
+
+    # Read nodes from files
     nodes = read_files(all_files_path)
     nb_nodes = len(nodes)
 
+    # Used to wait for all thread to set up their queue and message processing
     barrier_init = threading.Barrier(nb_nodes)
 
-    # Start each node in a thread, except root node
+    # Start each node in a thread
     threads = []
     for nd_ in nodes:
         x = threading.Thread(target=process, args=(nd_, barrier_init))
         x.start()
         threads.append(x)
 
+    # Dummy thread to send the a INIT message to all the nodes to begin the algorithm
     init_node = Node(0, "127.0.0.1")
     nodes.append(init_node)
 
     for nd_ in nodes[:-1]:
         init_node.send(Message(MessageType.INIT, []), nd_)
 
+    # Wait for the threads to finish
     for t in threads:
         t.join()
