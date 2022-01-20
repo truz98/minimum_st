@@ -1,0 +1,50 @@
+Node 0 sent <Message typeMessageType.INIT with param(s) > to node 1
+Node 0 sent <Message typeMessageType.INIT with param(s) > to node 2
+Node 0 sent <Message typeMessageType.INIT with param(s) > to node 3
+Node 1 receives a MessageType.INIT from node 0
+Node 2 receives a MessageType.INIT from node 0
+Node 1 sent <Message typeMessageType.TEST with param(s) > to node 3
+Node 3 receives a MessageType.INIT from node 0
+Node 2 sent <Message typeMessageType.TEST with param(s) > to node 1
+Node 1 sent <Message typeMessageType.TEST with param(s) > to node 2
+Node 3 sent <Message typeMessageType.TEST with param(s) > to node 1
+Node 1 receives a MessageType.TEST from node 2
+Node 2 receives a MessageType.TEST from node 1
+Node 3 receives a MessageType.TEST from node 1
+Node 1 sent <Message typeMessageType.ACCEPT with param(s) > to node 2
+Node 2 sent <Message typeMessageType.ACCEPT with param(s) > to node 1
+Node 3 sent <Message typeMessageType.ACCEPT with param(s) > to node 1
+Node 1 receives a MessageType.TEST from node 3
+Node 2 receives a MessageType.ACCEPT from node 1
+Node 2 passed barrier
+Node 1 sent <Message typeMessageType.ACCEPT with param(s) > to node 3
+Node 3 receives a MessageType.ACCEPT from node 1
+Node 2 his min. weight = 10
+Node 3 passed barrier
+Node 3 his min. weight = 1000
+Node 2 sent <Message typeMessageType.MERGE with param(s) > to node 2
+Node 3 sent <Message typeMessageType.MERGE with param(s) > to node 3
+Node 1 receives a MessageType.ACCEPT from node 2
+Node 2 receives a MessageType.MERGE from node 2
+Node 3 receives a MessageType.MERGE from node 3
+Node 2 sent <Message typeMessageType.CONNECT with param(s) > to node 1
+Node 1 receives a MessageType.ACCEPT from node 3
+Node 1 passed barrier
+Node 1 his min. weight = 10
+Node 1 sent <Message typeMessageType.MERGE with param(s) > to node 1
+Node 3 sent <Message typeMessageType.CONNECT with param(s) > to node 1
+Node 1 receives a MessageType.CONNECT from node 2
+Node 1 receives a MessageType.MERGE from node 1
+Node 1 sent <Message typeMessageType.CONNECT with param(s) > to node 2
+Node 1 new fragment and becomes root
+Node 2 receives a MessageType.CONNECT from node 1
+Node 2 new fragment and becomes root
+Node 2 sent <Message typeMessageType.NEW_FRAGMENT with param(s) > to node 2
+Node 1 sent <Message typeMessageType.NEW_FRAGMENT with param(s) > to node 1
+Node 2 receives a MessageType.NEW_FRAGMENT from node 2
+Node 1 receives a MessageType.CONNECT from node 3
+Node 2 sent <Message typeMessageType.ACK with param(s) > to node 2
+Node 1 receives a MessageType.NEW_FRAGMENT from node 1
+Node 2 receives a MessageType.ACK from node 2
+Node 1 sent <Message typeMessageType.ACK with param(s) > to node 1
+Node 1 receives a MessageType.ACK from node 1
