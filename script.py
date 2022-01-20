@@ -24,7 +24,6 @@ def get_node_from_ip(ip):
             return neigh
 
 
-
 # Initialize all nodes
 def initialize(node: Node):
     node.barrier = len(node.neighbours)
